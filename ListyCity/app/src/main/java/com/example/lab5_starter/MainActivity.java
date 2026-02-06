@@ -1,9 +1,13 @@
 package com.example.lab5_starter;
 
 import android.os.Bundle;
+import android.util.Log;
+import android.view.View;
+import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.ListView;
+import android.widget.TextView;
 
 import androidx.activity.EdgeToEdge;
 import androidx.appcompat.app.AppCompatActivity;
@@ -11,15 +15,26 @@ import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 
+import com.google.android.gms.tasks.OnSuccessListener;
+import com.google.firebase.firestore.CollectionReference;
+import com.google.firebase.firestore.DocumentReference;
+import com.google.firebase.firestore.FirebaseFirestore;
+import com.google.firebase.firestore.QueryDocumentSnapshot;
+
 import java.util.ArrayList;
 
 public class MainActivity extends AppCompatActivity implements CityDialogFragment.CityDialogListener {
 
     private Button addCityButton;
+    private Button deleteButton;
+    private City selected = null;
     private ListView cityListView;
 
     private ArrayList<City> cityArrayList;
     private ArrayAdapter<City> cityArrayAdapter;
+
+    private FirebaseFirestore db;
+    private CollectionReference citiesRef;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -32,16 +47,34 @@ public class MainActivity extends AppCompatActivity implements CityDialogFragmen
             return insets;
         });
 
+        db = FirebaseFirestore.getInstance();
+        citiesRef = db.collection("cities");
+
+        citiesRef.addSnapshotListener((value, error) -> {
+            if (error != null) {
+                Log.e("Firestore", error.toString());
+            }
+            if (value != null && !value.isEmpty()) {
+                cityArrayList.clear();
+                for (QueryDocumentSnapshot snapshot : value) {
+                    String name = snapshot.getString("name");
+                    String province = snapshot.getString("province");
+
+                    cityArrayList.add(new City(name, province));
+                }
+                cityArrayAdapter.notifyDataSetChanged();
+            }
+        });
+
         // Set views
         addCityButton = findViewById(R.id.buttonAddCity);
         cityListView = findViewById(R.id.listviewCities);
+        deleteButton = findViewById(R.id.delete_button);
 
         // create city array
         cityArrayList = new ArrayList<>();
         cityArrayAdapter = new CityArrayAdapter(this, cityArrayList);
         cityListView.setAdapter(cityArrayAdapter);
-
-        addDummyData();
 
         // set listeners
         addCityButton.setOnClickListener(view -> {
@@ -50,10 +83,20 @@ public class MainActivity extends AppCompatActivity implements CityDialogFragmen
         });
 
         cityListView.setOnItemClickListener((adapterView, view, i, l) -> {
-            City city = cityArrayAdapter.getItem(i);
-            CityDialogFragment cityDialogFragment = CityDialogFragment.newInstance(city);
-            cityDialogFragment.show(getSupportFragmentManager(),"City Details");
+//            City city = cityArrayAdapter.getItem(i);
+//            CityDialogFragment cityDialogFragment = CityDialogFragment.newInstance(city);
+//            cityDialogFragment.show(getSupportFragmentManager(),"City Details");
+            selected = cityArrayAdapter.getItem(i);
         });
+
+
+        deleteButton.setOnClickListener(v -> {
+            if (selected != null) {
+                deleteCity(selected);   // DELETE FROM FIRESTORE
+                selected = null;
+            }
+        });
+
 
     }
 
@@ -71,7 +114,32 @@ public class MainActivity extends AppCompatActivity implements CityDialogFragmen
         cityArrayList.add(city);
         cityArrayAdapter.notifyDataSetChanged();
 
+        //DocumentReference docRef = citiesRef.document(city.getName());
+        //docRef.set(city);
+        citiesRef
+            .document(city.getName())
+            .set(city)
+            .addOnSuccessListener(new OnSuccessListener<Void>() {
+                @Override
+                public void onSuccess(Void aVoid) {
+                    Log.d("Firestore", "DocumentSnapshot successfully written!");
+                }
+            });
     }
+
+    private void deleteCity(City city) {
+        if (city == null) return;
+        citiesRef
+            .document(city.getName()) // document ID = city name
+            .delete()
+            .addOnSuccessListener(aVoid ->
+                    Log.d("Firestore", "City deleted successfully")
+            )
+            .addOnFailureListener(e ->
+                    Log.e("Firestore", "Error deleting city", e)
+            );
+    }
+
 
     public void addDummyData(){
         City m1 = new City("Edmonton", "AB");
